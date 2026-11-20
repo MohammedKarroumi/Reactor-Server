@@ -19,7 +19,7 @@
 ## Phase 3: HTTP/1.1 Parser & State Machine
 - [x] Buffer incoming bytes until `\r\n\r\n` arrives (handles split TCP packets)
 - [x] Parse request line (`method`, `path`, `version`) and headers into a lowercase dictionary
-- [ ] Handle `Content-Length` bodies by waiting until `len(read_buffer) >= content_length`
+- [x] Handle `Content-Length` bodies by waiting until `len(read_buffer) >= content_length`
 - [ ] Implement `Transfer-Encoding: chunked` parser (read hex size line -> read data -> stop at `0\r\n\r\n`)
 - [ ] Support `Connection: keep-alive` (reset request state without closing socket) vs `Connection: close`
 

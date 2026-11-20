@@ -7,7 +7,7 @@ PORT = 9999
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 server.bind((ADDR,PORT))
-server.listen(5)
+server.listen(5000)
 server.setblocking(False)
 
 sel = selectors.DefaultSelector()
@@ -30,16 +30,20 @@ def parse_request(request):
         "version": version,
         "header": header
     }
-def route_request(method, path):
-    if path == "/":
+def route_request(method, path, request_body):
+    if method == "GET":
+        if path == "/":
+            status = "200 OK"
+            body = "Hello from server"
+        elif path == "/about":
+            status = "200 OK"
+            body = "Server on pure python and socket ig?"
+        else:
+            status = "404 Not Found"
+            body = "Page Not Found"
+    elif method == "POST":
         status = "200 OK"
-        body = "Hello from server"
-    elif path == "/about":
-        status = "200 OK"
-        body = "Server on pure python and socket ig?"
-    else:
-        status = "404 Not Found"
-        body = "Page Not Found"
+        body = ""
     content_length = len(body.encode())
     return {
         "status": status,
@@ -80,10 +84,14 @@ while True:
                 conn.readbuffer +=chunk
                 if b"\r\n\r\n" not in conn.readbuffer:
                     continue
-                request = conn.readbuffer.decode()
-                parsed_request = parse_request(request)
-                method, path, version, header = parsed_request["method"], parsed_request["path"], parsed_request["version"], parsed_request["header"]
-                response_data = route_request(method,path)
+                header_bytes, body_bytes = conn.readbuffer.split(b"\r\n\r\n",1)
+                parsed_header = parse_request(header_bytes.decode())
+                method, path, version, header = parsed_header["method"], parsed_header["path"], parsed_header["version"], parsed_header["header"]
+                content_length = int(header.get("content-length", 0))
+                if len(body_bytes) < content_length:
+                    continue
+                request_body = body_bytes[:content_length].decode()
+                response_data = route_request(method,path,request_body)
                 response = build_repsonse(response_data["status"], response_data["content_length"], response_data["body"])
                 conn.writebuffer = response.encode()
                 sel.modify(client, selectors.EVENT_READ | selectors.EVENT_WRITE, conn)
