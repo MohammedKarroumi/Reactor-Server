@@ -31,7 +31,7 @@ def parse_request(request):
         "header": header
     }
 
-def route_request(method, path, request_body):
+def route_request(method, path, request_body, content_type= "text/plain; charset=utf-8"):
     if method == "GET":
         if path == "/":
             status = "200 OK"
@@ -45,16 +45,20 @@ def route_request(method, path, request_body):
     elif method == "POST":
         status = "200 OK"
         body = ""
+    else:
+        status = "405 Method Not Allowed"
+        body = "Method Not Allowed"
     content_length = len(body.encode())
     return {
         "status": status,
         "body": body,
-        "content_length": content_length
+        "content_length": content_length,
+        "content_type": content_type
     }
 
-def build_repsonse(status,content_length,body, keepalive):
+def build_repsonse(status,content_length,body, keepalive,content_type):
     connection = "keep-alive" if keepalive else "close"
-    return f"HTTP/1.1 {status}\r\nContent-Length: {content_length}\r\nConnection: {connection}\r\n\r\n{body}"
+    return f"HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: {connection}\r\n\r\n{body}"
 
 def parse_chunked(body_bytes):
     full_body = b""
@@ -110,7 +114,7 @@ while True:
                     continue
                 header_bytes, body_bytes = conn.readbuffer.split(b"\r\n\r\n",1)
                 parsed_header = parse_request(header_bytes.decode())
-                method, path, version, header = parsed_header["method"], parsed_header["path"], parsed_header["version"], parsed_header["header"]
+                method, path, version, header= parsed_header["method"], parsed_header["path"], parsed_header["version"], parsed_header["header"]
                 content_length = int(header.get("content-length", 0))
                 conn_header = header.get("connection", "").lower()
                 if version == "HTTP/1.1":
@@ -130,7 +134,7 @@ while True:
                     request_body = body_bytes[:content_length].decode()
                     conn.readbuffer = body_bytes[content_length:]
                 response_data = route_request(method,path,request_body)
-                response = build_repsonse(response_data["status"], response_data["content_length"], response_data["body"], conn.keepalive)
+                response = build_repsonse(response_data["status"], response_data["content_length"], response_data["body"], conn.keepalive, response_data["content_type"])
                 conn.writebuffer = response.encode()
                 sel.modify(client, selectors.EVENT_READ | selectors.EVENT_WRITE, conn)
             if mask & selectors.EVENT_WRITE:
