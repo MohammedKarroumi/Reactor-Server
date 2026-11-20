@@ -21,7 +21,7 @@
 - [x] Parse request line (`method`, `path`, `version`) and headers into a lowercase dictionary
 - [x] Handle `Content-Length` bodies by waiting until `len(read_buffer) >= content_length`
 - [x] Implement `Transfer-Encoding: chunked` parser (read hex size line -> read data -> stop at `0\r\n\r\n`)
-- [ ] Support `Connection: keep-alive` (reset request state without closing socket) vs `Connection: close`
+- [x] Support `Connection: keep-alive` (reset request state without closing socket) vs `Connection: close`
 
 ## Phase 4: WebSocket Protocol (RFC 6455)
 - [ ] Detect `Upgrade: websocket` and `Sec-WebSocket-Key` headers

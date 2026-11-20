@@ -52,8 +52,9 @@ def route_request(method, path, request_body):
         "content_length": content_length
     }
 
-def build_repsonse(status,content_length,body):
-    return f"HTTP/1.1 {status}\r\nContent-Length: {content_length}\r\n\r\n{body}"
+def build_repsonse(status,content_length,body, keepalive):
+    connection = "keep-alive" if keepalive else "close"
+    return f"HTTP/1.1 {status}\r\nContent-Length: {content_length}\r\nConnection: {connection}\r\n\r\n{body}"
 
 def parse_chunked(body_bytes):
     full_body = b""
@@ -75,11 +76,13 @@ def parse_chunked(body_bytes):
         
         full_body+= body_bytes[data_start: data_start +chunk_size]
         pos = data_start+chunk_size+2
+
 class Connection:
     def __init__(self,sock):
         self.sock = sock
         self.readbuffer = b""
         self.writebuffer = b""
+        self.keepalive = False
 
 while True:
     events = sel.select()
@@ -97,7 +100,7 @@ while True:
             conn = key.data
             client = conn.sock
             if mask & selectors.EVENT_READ:
-                chunk = client.recv(3)
+                chunk = client.recv(1024)
                 if not chunk:
                     sel.unregister(client)
                     client.close()
@@ -109,20 +112,25 @@ while True:
                 parsed_header = parse_request(header_bytes.decode())
                 method, path, version, header = parsed_header["method"], parsed_header["path"], parsed_header["version"], parsed_header["header"]
                 content_length = int(header.get("content-length", 0))
+                conn_header = header.get("connection", "").lower()
+                if version == "HTTP/1.1":
+                    conn.keepalive = (conn_header != "close")
+                else:
+                    conn.keepalive = (conn_header == "keep-alive")
                 if header.get("transfer-encoding", "").lower() == "chunked":
                     result = parse_chunked(body_bytes)
                     if result is None:
                         continue
                     raw_body, consumed = result
                     request_body = raw_body.decode()
-                    conn.readbuffer = request_body[consumed:]
+                    conn.readbuffer = body_bytes[consumed:]
                 else:
                     if len(body_bytes) < content_length:
                         continue
                     request_body = body_bytes[:content_length].decode()
                     conn.readbuffer = body_bytes[content_length:]
                 response_data = route_request(method,path,request_body)
-                response = build_repsonse(response_data["status"], response_data["content_length"], response_data["body"])
+                response = build_repsonse(response_data["status"], response_data["content_length"], response_data["body"], conn.keepalive)
                 conn.writebuffer = response.encode()
                 sel.modify(client, selectors.EVENT_READ | selectors.EVENT_WRITE, conn)
             if mask & selectors.EVENT_WRITE:
@@ -130,5 +138,8 @@ while True:
                     send = client.send(conn.writebuffer)
                     conn.writebuffer = conn.writebuffer[send:]
                 if not conn.writebuffer:
-                    sel.unregister(client)
-                    client.close()
+                    if conn.keepalive:
+                        sel.modify(client, selectors.EVENT_READ, conn)
+                    else:
+                        sel.unregister(client)
+                        client.close()
