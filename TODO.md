@@ -11,14 +11,14 @@
 - [x] Set `server_sock.setblocking(False)` and `client_sock.setblocking(False)`
 - [x] Create `selectors.DefaultSelector()` and register `server_sock` for `EVENT_READ`
 - [x] Write the `while True:` event loop calling `selector.select()`
-- [ ] Accept new clients in a loop until `BlockingIOError`
-- [ ] Create a `Connection` class holding `sock`, `read_buffer` (`bytearray`), `write_buffer` (`bytearray`), and `state`
-- [ ] Dynamically toggle `EVENT_WRITE` only when `write_buffer` is not empty
-- [ ] Test multiple concurrent `curl` / browser tabs without blocking
+- [x] Accept new clients in a loop until `BlockingIOError`
+- [x] Create a `Connection` class holding `sock`, `readbuffer` (`bytearray`), `writebuffer` (`bytearray`), and `state`
+- [x] Dynamically toggle `EVENT_WRITE` only when `write_buffer` is not empty
+- [x] Test multiple concurrent `curl` / browser tabs without blocking
 
 ## Phase 3: HTTP/1.1 Parser & State Machine
-- [ ] Buffer incoming bytes until `\r\n\r\n` arrives (handles split TCP packets)
-- [ ] Parse request line (`method`, `path`, `version`) and headers into a lowercase dictionary
+- [x] Buffer incoming bytes until `\r\n\r\n` arrives (handles split TCP packets)
+- [x] Parse request line (`method`, `path`, `version`) and headers into a lowercase dictionary
 - [ ] Handle `Content-Length` bodies by waiting until `len(read_buffer) >= content_length`
 - [ ] Implement `Transfer-Encoding: chunked` parser (read hex size line -> read data -> stop at `0\r\n\r\n`)
 - [ ] Support `Connection: keep-alive` (reset request state without closing socket) vs `Connection: close`
