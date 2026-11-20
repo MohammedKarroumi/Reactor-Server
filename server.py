@@ -30,6 +30,7 @@ def parse_request(request):
         "version": version,
         "header": header
     }
+
 def route_request(method, path, request_body):
     if method == "GET":
         if path == "/":
@@ -54,6 +55,26 @@ def route_request(method, path, request_body):
 def build_repsonse(status,content_length,body):
     return f"HTTP/1.1 {status}\r\nContent-Length: {content_length}\r\n\r\n{body}"
 
+def parse_chunked(body_bytes):
+    full_body = b""
+    pos = 0
+    while True:
+        line_end = body_bytes.find(b"\r\n", pos)
+        if line_end == -1: return None
+
+        hex_str = body_bytes[pos:line_end].decode().split(";")[0].strip()
+        chunk_size = int(hex_str, 16)
+        data_start = line_end+2
+        if chunk_size == 0:
+            if data_start + 2 > len(body_bytes):
+                return None
+            return full_body, data_start + 2
+        
+        if data_start+chunk_size+2 >len(body_bytes):
+            return None
+        
+        full_body+= body_bytes[data_start: data_start +chunk_size]
+        pos = data_start+chunk_size+2
 class Connection:
     def __init__(self,sock):
         self.sock = sock
@@ -76,7 +97,7 @@ while True:
             conn = key.data
             client = conn.sock
             if mask & selectors.EVENT_READ:
-                chunk = client.recv(1024)
+                chunk = client.recv(3)
                 if not chunk:
                     sel.unregister(client)
                     client.close()
@@ -88,9 +109,18 @@ while True:
                 parsed_header = parse_request(header_bytes.decode())
                 method, path, version, header = parsed_header["method"], parsed_header["path"], parsed_header["version"], parsed_header["header"]
                 content_length = int(header.get("content-length", 0))
-                if len(body_bytes) < content_length:
-                    continue
-                request_body = body_bytes[:content_length].decode()
+                if header.get("transfer-encoding", "").lower() == "chunked":
+                    result = parse_chunked(body_bytes)
+                    if result is None:
+                        continue
+                    raw_body, consumed = result
+                    request_body = raw_body.decode()
+                    conn.readbuffer = request_body[consumed:]
+                else:
+                    if len(body_bytes) < content_length:
+                        continue
+                    request_body = body_bytes[:content_length].decode()
+                    conn.readbuffer = body_bytes[content_length:]
                 response_data = route_request(method,path,request_body)
                 response = build_repsonse(response_data["status"], response_data["content_length"], response_data["body"])
                 conn.writebuffer = response.encode()

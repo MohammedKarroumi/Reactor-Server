@@ -20,7 +20,7 @@
 - [x] Buffer incoming bytes until `\r\n\r\n` arrives (handles split TCP packets)
 - [x] Parse request line (`method`, `path`, `version`) and headers into a lowercase dictionary
 - [x] Handle `Content-Length` bodies by waiting until `len(read_buffer) >= content_length`
-- [ ] Implement `Transfer-Encoding: chunked` parser (read hex size line -> read data -> stop at `0\r\n\r\n`)
+- [x] Implement `Transfer-Encoding: chunked` parser (read hex size line -> read data -> stop at `0\r\n\r\n`)
 - [ ] Support `Connection: keep-alive` (reset request state without closing socket) vs `Connection: close`
 
 ## Phase 4: WebSocket Protocol (RFC 6455)
