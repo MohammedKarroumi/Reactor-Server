@@ -1,3 +1,5 @@
+from router import route_request
+
 def parse_request(request):
     lines = request.split("\r\n")
     # Request line format: "METHOD /path HTTP/version"
@@ -55,3 +57,55 @@ def build_response(status,content_length,body, keepalive,content_type):
         f"Connection: {connection}\r\n\r\n"
         f"{body}"
     )
+
+
+def process_http(conn):
+    # Wait until the full HTTP header block "\r\n\r\n" has arrived
+    if b"\r\n\r\n" not in conn.readbuffer:
+        return
+
+    # Split the request into header and body
+    header_bytes, body_bytes = conn.readbuffer.split(b"\r\n\r\n",1)
+    parsed_header = parse_request(header_bytes.decode())
+    
+    # Assign values to method, path, version and header
+    method, path, version, header= (
+        parsed_header["method"], 
+        parsed_header["path"], 
+        parsed_header["version"], 
+        parsed_header["header"]
+    )
+
+    # HTTP/1.1 defaults to persistent connection unless "Connection: close" is sent
+    conn_header = header.get("connection", "").lower()
+    if version == "HTTP/1.1":
+        conn.keepalive = (conn_header != "close")
+    # HTTP/1.0 default to non-persistent connection unless "Connection: keep-alive" is sent
+    else:
+        conn.keepalive = (conn_header == "keep-alive")
+    
+    # Extract request body (either chunked stream or fixed content-length)
+    if header.get("transfer-encoding", "").lower() == "chunked":
+        result = parse_chunked(body_bytes)
+        if result is None:
+            return # Wait for remaining chunks
+        raw_body, consumed = result
+        request_body = raw_body.decode()
+        conn.readbuffer = body_bytes[consumed:]
+    else:
+        content_length = int(header.get("content-length", 0))
+        if len(body_bytes) < content_length:
+            return # Wait for remaining body bytes
+        request_body = body_bytes[:content_length].decode()
+        conn.readbuffer = body_bytes[content_length:]
+    
+    # Build HTTP response and watch socket for write readiness
+    response_data = route_request(method,path,request_body)
+    response = build_response(
+        response_data["status"],
+        response_data["content_length"],
+        response_data["body"],
+        conn.keepalive,
+        response_data["content_type"]
+        )
+    conn.writebuffer = response.encode()
