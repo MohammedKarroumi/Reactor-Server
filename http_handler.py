@@ -50,13 +50,13 @@ def parse_chunked(body_bytes):
 
 def build_response(status,content_length,body, keepalive,content_type):
     connection = "keep-alive" if keepalive else "close"
-    return (
+    header = (
         f"HTTP/1.1 {status}\r\n"
         f"Content-Type: {content_type}\r\n"
         f"Content-Length: {content_length}\r\n"
         f"Connection: {connection}\r\n\r\n"
-        f"{body}"
     )
+    return header.encode() + body
 
 
 def process_http(conn):
@@ -108,4 +108,4 @@ def process_http(conn):
         conn.keepalive,
         response_data["content_type"]
         )
-    conn.writebuffer = response.encode()
+    conn.writebuffer = response

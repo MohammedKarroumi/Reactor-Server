@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reactor Server // Test Bench</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="card">
+      <div class="badge" id="asset-status">Checking static assets...</div>
+      <h1>Reactor Server</h1>
+      <p class="subtitle">Pure Python non-blocking HTTP/1.1 &amp; WebSocket engine</p>
+    </header>
+
+    <section class="card">
+      <h2>HTTP Endpoint Tester</h2>
+      <div class="controls">
+        <button id="btn-get">GET /index.html</button>
+        <button id="btn-404">GET /missing (404)</button>
+      </div>
+      <pre id="http-output">Click a button above to test HTTP responses...</pre>
+    </section>
+
+    <section class="card">
+      <h2>WebSocket Ready Check (Phase 4)</h2>
+      <div class="controls">
+        <button id="btn-ws-connect">Connect WS</button>
+        <input type="text" id="ws-input" placeholder="Message payload..." disabled />
+        <button id="btn-ws-send" disabled>Send</button>
+      </div>
+      <pre id="ws-output">WebSocket idle (ready for Phase 4 upgrade test).</pre>
+    </section>
+
+    <footer class="disclosure">
+      Disclosure: This test frontend (<code>public/</code>) is AI-generated; the Reactor server core is hand-written in pure Python.
+    </footer>
+  </main>
+
+  <script src="/script.js"></script>
+</body>
+</html>
