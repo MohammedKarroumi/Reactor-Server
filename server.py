@@ -1,35 +1,19 @@
 import socket
 import selectors
-
+from http_handler import parse_chunked, parse_request, build_response
 ADDR = '0.0.0.0'
 PORT = 9999
 
+# Create non-blocking TCP listening socket
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # Allow instant restart 
 server.bind((ADDR,PORT))
 server.listen(5000)
 server.setblocking(False)
 
+# Register listening socket with OS event loop
 sel = selectors.DefaultSelector()
 sel.register(server, selectors.EVENT_READ,"accept")
-
-def parse_request(request):
-    lines = request.split("\r\n")
-    head = lines[0].split(" ")
-    method, path, version = head[0], head[1], head[2]
-    header = dict()
-    for line in lines[1:]:
-        if not line:
-            break
-        key, value = line.split(":", 1)
-        header[key.strip().lower()] = value.strip()
-    print(f"METHOD: {method}\nPATH: {path}\nVERSION: {version}\nHEADER: {header}")
-    return {
-        "method": method,
-        "path": path,
-        "version": version,
-        "header": header
-    }
 
 def route_request(method, path, request_body, content_type= "text/plain; charset=utf-8"):
     if method == "GET":
@@ -48,6 +32,7 @@ def route_request(method, path, request_body, content_type= "text/plain; charset
     else:
         status = "405 Method Not Allowed"
         body = "Method Not Allowed"
+    # Measure byte length (not char count)
     content_length = len(body.encode())
     return {
         "status": status,
@@ -56,93 +41,104 @@ def route_request(method, path, request_body, content_type= "text/plain; charset
         "content_type": content_type
     }
 
-def build_repsonse(status,content_length,body, keepalive,content_type):
-    connection = "keep-alive" if keepalive else "close"
-    return f"HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: {connection}\r\n\r\n{body}"
 
-def parse_chunked(body_bytes):
-    full_body = b""
-    pos = 0
-    while True:
-        line_end = body_bytes.find(b"\r\n", pos)
-        if line_end == -1: return None
-
-        hex_str = body_bytes[pos:line_end].decode().split(";")[0].strip()
-        chunk_size = int(hex_str, 16)
-        data_start = line_end+2
-        if chunk_size == 0:
-            if data_start + 2 > len(body_bytes):
-                return None
-            return full_body, data_start + 2
-        
-        if data_start+chunk_size+2 >len(body_bytes):
-            return None
-        
-        full_body+= body_bytes[data_start: data_start +chunk_size]
-        pos = data_start+chunk_size+2
 
 class Connection:
+    """Per-client state storing incomplete/outgoing byte streams."""
     def __init__(self,sock):
         self.sock = sock
         self.readbuffer = b""
         self.writebuffer = b""
         self.keepalive = False
 
+# Mainn Reactor event loop
 while True:
-    events = sel.select()
+    events = sel.select() # Block until at least one socket is ready
     for key, mask in events:
+        # New incoming client connection
         if key.data == "accept":
             while True:
                 try:
                     client, addr = key.fileobj.accept()
                 except BlockingIOError:
-                    break
+                    break # no more pending connection in backlog
                 client.setblocking(False)
                 conn = Connection(client)
                 sel.register(client, selectors.EVENT_READ, conn)
+        # Existing client socket I/O
         else:
             conn = key.data
             client = conn.sock
+
             if mask & selectors.EVENT_READ:
                 chunk = client.recv(1024)
                 if not chunk:
+                    # Client closed the TCP connection
                     sel.unregister(client)
                     client.close()
                     continue
+
                 conn.readbuffer +=chunk
+
+                # Wait until the full HTTP header block "\r\n\r\n" has arrived
                 if b"\r\n\r\n" not in conn.readbuffer:
                     continue
+
+                # Split the request into header and body
                 header_bytes, body_bytes = conn.readbuffer.split(b"\r\n\r\n",1)
                 parsed_header = parse_request(header_bytes.decode())
-                method, path, version, header= parsed_header["method"], parsed_header["path"], parsed_header["version"], parsed_header["header"]
-                content_length = int(header.get("content-length", 0))
+                
+                # Assign values to method, path, version and header
+                method, path, version, header= (
+                    parsed_header["method"], 
+                    parsed_header["path"], 
+                    parsed_header["version"], 
+                    parsed_header["header"]
+                )
+
+                # HTTP/1.1 defaults to persistent connection unless "Connection: close" is sent
                 conn_header = header.get("connection", "").lower()
                 if version == "HTTP/1.1":
                     conn.keepalive = (conn_header != "close")
+                # HTTP/1.0 default to non-persistent connection unless "Connection: keep-alive" is sent
                 else:
                     conn.keepalive = (conn_header == "keep-alive")
+                
+                # Extract request body (either chunked stream or fixed content-length)
                 if header.get("transfer-encoding", "").lower() == "chunked":
                     result = parse_chunked(body_bytes)
                     if result is None:
-                        continue
+                        continue # Wait for remaining chunks
                     raw_body, consumed = result
                     request_body = raw_body.decode()
                     conn.readbuffer = body_bytes[consumed:]
                 else:
+                    content_length = int(header.get("content-length", 0))
                     if len(body_bytes) < content_length:
-                        continue
+                        continue # Wait for remaining body bytes
                     request_body = body_bytes[:content_length].decode()
                     conn.readbuffer = body_bytes[content_length:]
+                
+                # Build HTTP response and watch socket for write readiness
                 response_data = route_request(method,path,request_body)
-                response = build_repsonse(response_data["status"], response_data["content_length"], response_data["body"], conn.keepalive, response_data["content_type"])
+                response = build_response(
+                    response_data["status"],
+                    response_data["content_length"],
+                    response_data["body"],
+                    conn.keepalive,
+                    response_data["content_type"]
+                    )
                 conn.writebuffer = response.encode()
                 sel.modify(client, selectors.EVENT_READ | selectors.EVENT_WRITE, conn)
+
             if mask & selectors.EVENT_WRITE:
                 if conn.writebuffer:
+                    # Send as many bytes as the OS kernel buffer accepts at the moment
                     send = client.send(conn.writebuffer)
                     conn.writebuffer = conn.writebuffer[send:]
                 if not conn.writebuffer:
                     if conn.keepalive:
+                        # Stop watching EVENT_WRITE to prevent high cpu usage and wait for next request
                         sel.modify(client, selectors.EVENT_READ, conn)
                     else:
                         sel.unregister(client)
