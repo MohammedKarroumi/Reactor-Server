@@ -7,6 +7,7 @@ ADDR = '0.0.0.0'
 PORT = 9999
 
 # Create non-blocking TCP listening socket
+print("Starting Reactor server...")
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # Allow instant restart 
 server.bind((ADDR,PORT))
@@ -14,13 +15,15 @@ server.listen(5000)
 server.setblocking(False)
 
 # Register listening socket with OS event loop
+print(f"Server running on port:{PORT}")
 sel = selectors.DefaultSelector()
 sel.register(server, selectors.EVENT_READ,"accept")
 
 class Connection:
     """Per-client state storing incomplete/outgoing byte streams."""
-    def __init__(self,sock):
+    def __init__(self,sock,addr):
         self.sock = sock
+        self.addr = f"{addr[0]}:{addr[1]}"
         self.readbuffer = b""
         self.writebuffer = b""
         self.keepalive = False
@@ -37,8 +40,9 @@ while True:
                 except BlockingIOError:
                     break # no more pending connection in backlog
                 client.setblocking(False)
-                conn = Connection(client)
+                conn = Connection(client,addr)
                 sel.register(client, selectors.EVENT_READ, conn)
+                print(f"[+] Connected: {conn.addr}")
         # Existing client socket I/O
         else:
             conn = key.data
@@ -48,10 +52,11 @@ while True:
                 chunk = client.recv(1024)
                 if not chunk:
                     # Client closed the TCP connection
+                    print(f"[-] Disconnected: {conn.addr}")
                     sel.unregister(client)
                     client.close()
                     continue
-
+                print(f"[<] {conn.addr} received {len(chunk)} bytes")
                 conn.readbuffer +=chunk
                 process_http(conn)
                 if conn.writebuffer:
@@ -62,10 +67,13 @@ while True:
                     # Send as many bytes as the OS kernel buffer accepts at the moment
                     send = client.send(conn.writebuffer)
                     conn.writebuffer = conn.writebuffer[send:]
+                    print(f"[>] {conn.addr} sent {send} bytes")
                 if not conn.writebuffer:
                     if conn.keepalive:
                         # Stop watching EVENT_WRITE to prevent high cpu usage and wait for next request
+                        print(f"[*] {conn.addr} keeping connection alive")
                         sel.modify(client, selectors.EVENT_READ, conn)
                     else:
+                        print(f"[-] Closed after response: {conn.addr}")
                         sel.unregister(client)
                         client.close()

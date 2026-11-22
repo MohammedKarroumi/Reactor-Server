@@ -2,8 +2,6 @@ import os
 import mimetypes
 
 PUBLIC_DIR = os.path.abspath("public")
-
-
 def route_request(method, path, request_body, content_type="text/plain; charset=utf-8"):
     if method in ("GET", "HEAD"):
         # Strip query parameters (e.g. /style.css?v=1) and map "/" to index.html
